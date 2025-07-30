@@ -9,6 +9,8 @@ import {
   KeyboardAvoidingView,
   Platform,
   Alert,
+  Keyboard,
+  Animated,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { KeyboardAwareScrollView } from 'react-native-keyboard-aware-scroll-view';
@@ -24,10 +26,39 @@ export default function ChatScreen({ route, navigation }) {
   const [loading, setLoading] = useState(true);
   const [socket, setSocket] = useState(null);
   const flatListRef = useRef(null);
+  const [isKeyboardVisible, setIsKeyboardVisible] = useState(false);
+  const keyboardSlideAnim = useRef(new Animated.Value(0)).current;
+
+  const handleScrollBeginDrag = () => {
+    // Smoothly slide keyboard down when user starts scrolling
+    if (isKeyboardVisible) {
+      Animated.timing(keyboardSlideAnim, {
+        toValue: 0,
+        duration: 300,
+        useNativeDriver: true,
+      }).start(() => {
+        Keyboard.dismiss();
+      });
+    }
+  };
+
+  const handleScroll = (event) => {
+    const { velocity } = event.nativeEvent;
+    // If scrolling up with significant velocity, slide keyboard down
+    if (velocity && velocity.y < -0.5 && isKeyboardVisible) {
+      Animated.timing(keyboardSlideAnim, {
+        toValue: 0,
+        duration: 300,
+        useNativeDriver: true,
+      }).start(() => {
+        Keyboard.dismiss();
+      });
+    }
+  };
 
   useEffect(() => {
     // Connect to Socket.IO
-    const newSocket = io('http://localhost:3001');
+    const newSocket = io('http://10.0.0.160:3001');
     setSocket(newSocket);
 
     // Join user's room
@@ -49,12 +80,37 @@ export default function ChatScreen({ route, navigation }) {
   }, [user.id]);
 
   useEffect(() => {
+    const keyboardDidShowListener = Keyboard.addListener('keyboardDidShow', () => {
+      setIsKeyboardVisible(true);
+      Animated.timing(keyboardSlideAnim, {
+        toValue: 1,
+        duration: 250,
+        useNativeDriver: true,
+      }).start();
+    });
+
+    const keyboardDidHideListener = Keyboard.addListener('keyboardDidHide', () => {
+      setIsKeyboardVisible(false);
+      Animated.timing(keyboardSlideAnim, {
+        toValue: 0,
+        duration: 250,
+        useNativeDriver: true,
+      }).start();
+    });
+
+    return () => {
+      keyboardDidShowListener?.remove();
+      keyboardDidHideListener?.remove();
+    };
+  }, [keyboardSlideAnim]);
+
+  useEffect(() => {
     fetchMessages();
   }, [userId]);
 
   const fetchMessages = async () => {
     try {
-      const response = await axios.get(`http://localhost:3001/api/conversations/${userId}`, {
+      const response = await axios.get(`http://10.0.0.160:3001/api/conversations/${userId}`, {
         headers: {
           Authorization: `Bearer ${token}`,
         },
@@ -125,21 +181,34 @@ export default function ChatScreen({ route, navigation }) {
 
   return (
     <View style={styles.container}>
-      <KeyboardAvoidingView
-        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-        style={styles.keyboardView}
-      >
-        <FlatList
-          ref={flatListRef}
-          data={messages}
-          renderItem={renderMessage}
-          keyExtractor={(item) => item.id}
-          ItemSeparatorComponent={renderSeparator}
-          contentContainerStyle={styles.messagesList}
-          onContentSizeChange={() => flatListRef.current?.scrollToEnd({ animated: true })}
-          onLayout={() => flatListRef.current?.scrollToEnd({ animated: true })}
-        />
+      <FlatList
+        ref={flatListRef}
+        data={messages}
+        renderItem={renderMessage}
+        keyExtractor={(item) => item.id}
+        ItemSeparatorComponent={renderSeparator}
+        contentContainerStyle={styles.messagesList}
+        onContentSizeChange={() => flatListRef.current?.scrollToEnd({ animated: true })}
+        onLayout={() => flatListRef.current?.scrollToEnd({ animated: true })}
+        style={styles.messagesContainer}
+        onScrollBeginDrag={handleScrollBeginDrag}
+        onScroll={handleScroll}
+        scrollEventThrottle={16}
+      />
 
+      <Animated.View
+        style={[
+          styles.keyboardView,
+          {
+            transform: [{
+              translateY: keyboardSlideAnim.interpolate({
+                inputRange: [0, 1],
+                outputRange: [0, -300], // Adjust based on keyboard height
+              })
+            }]
+          }
+        ]}
+      >
         <View style={styles.inputContainer}>
           <View style={styles.textInputContainer}>
             <TextInput
@@ -150,6 +219,7 @@ export default function ChatScreen({ route, navigation }) {
               placeholderTextColor="#8E8E93"
               multiline
               maxLength={1000}
+              textAlignVertical="top"
             />
           </View>
           
@@ -168,7 +238,7 @@ export default function ChatScreen({ route, navigation }) {
             />
           </TouchableOpacity>
         </View>
-      </KeyboardAvoidingView>
+      </Animated.View>
     </View>
   );
 }
@@ -189,11 +259,16 @@ const styles = StyleSheet.create({
     color: '#8E8E93',
   },
   keyboardView: {
+    backgroundColor: '#F2F2F7',
+    paddingBottom: Platform.OS === 'ios' ? 34 : 0,
+  },
+  messagesContainer: {
     flex: 1,
   },
   messagesList: {
     paddingHorizontal: 16,
     paddingVertical: 8,
+    paddingBottom: 20,
   },
   messageContainer: {
     marginVertical: 2,
@@ -246,7 +321,8 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'flex-end',
     paddingHorizontal: 16,
-    paddingVertical: 8,
+    paddingVertical: 12,
+    paddingBottom: 16,
     backgroundColor: '#F2F2F7',
     borderTopWidth: 1,
     borderTopColor: '#C6C6C8',
@@ -258,14 +334,20 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
     paddingVertical: 8,
     marginRight: 8,
+    minHeight: 36,
     maxHeight: 100,
     borderWidth: 1,
     borderColor: '#C7C7CC',
+    marginBottom: 8,
   },
   textInput: {
     fontSize: 16,
     color: '#000',
+    minHeight: 20,
     maxHeight: 80,
+    paddingTop: 0,
+    paddingBottom: 0,
+    paddingHorizontal: 0,
   },
   sendButton: {
     width: 32,
