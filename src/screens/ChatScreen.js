@@ -17,6 +17,7 @@ import { KeyboardAwareScrollView } from 'react-native-keyboard-aware-scroll-view
 import io from 'socket.io-client';
 import axios from 'axios';
 import { useAuth } from '../context/AuthContext';
+import { API_BASE_URL, SOCKET_URL } from '../config/api';
 
 export default function ChatScreen({ route, navigation }) {
   const { userId, userName, userAvatar } = route.params;
@@ -58,7 +59,7 @@ export default function ChatScreen({ route, navigation }) {
 
   useEffect(() => {
     // Connect to Socket.IO
-    const newSocket = io('http://localhost:3001');
+    const newSocket = io(SOCKET_URL);
     setSocket(newSocket);
 
     // Join user's room
@@ -110,7 +111,7 @@ export default function ChatScreen({ route, navigation }) {
 
   const fetchMessages = async () => {
     try {
-      const response = await axios.get(`http://localhost:3001/api/conversations/${userId}`, {
+      const response = await axios.get(`${API_BASE_URL}/api/conversations/${userId}`, {
         headers: {
           Authorization: `Bearer ${token}`,
         },
