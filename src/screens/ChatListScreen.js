@@ -20,7 +20,7 @@ export default function ChatListScreen({ navigation }) {
 
   const fetchUsers = async () => {
     try {
-      const response = await axios.get('http://10.0.0.160:3001/api/users', {
+      const response = await axios.get('http://localhost:3001/api/users', {
         headers: {
           Authorization: `Bearer ${token}`,
         },

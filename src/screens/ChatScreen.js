@@ -58,7 +58,7 @@ export default function ChatScreen({ route, navigation }) {
 
   useEffect(() => {
     // Connect to Socket.IO
-    const newSocket = io('http://10.0.0.160:3001');
+    const newSocket = io('http://localhost:3001');
     setSocket(newSocket);
 
     // Join user's room
@@ -110,7 +110,7 @@ export default function ChatScreen({ route, navigation }) {
 
   const fetchMessages = async () => {
     try {
-      const response = await axios.get(`http://10.0.0.160:3001/api/conversations/${userId}`, {
+      const response = await axios.get(`http://localhost:3001/api/conversations/${userId}`, {
         headers: {
           Authorization: `Bearer ${token}`,
         },
