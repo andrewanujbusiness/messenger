@@ -18,6 +18,41 @@ import io from 'socket.io-client';
 import axios from 'axios';
 import { useAuth } from '../context/AuthContext';
 import { API_BASE_URL, SOCKET_URL } from '../config/api';
+import ToneSelector from '../components/ToneSelector';
+
+// Import TONES from ToneSelector component
+const TONES = [
+  {
+    id: 'warmer',
+    name: 'Warmer',
+    description: 'Makes messages friendlier and more inviting',
+    icon: 'heart',
+  },
+  {
+    id: 'profanity-free',
+    name: 'Profanity-Free',
+    description: 'Removes or replaces inappropriate language',
+    icon: 'shield-checkmark',
+  },
+  {
+    id: 'formal',
+    name: 'More Formal',
+    description: 'Adjusts to professional tone',
+    icon: 'business',
+  },
+  {
+    id: 'simplified',
+    name: 'Simplified / Clearer',
+    description: 'Rephrases complex language into plain English',
+    icon: 'chatbubble-ellipses',
+  },
+  {
+    id: 'concise',
+    name: 'Concise / Brief',
+    description: 'Shortens messages to be more direct',
+    icon: 'time',
+  },
+];
 
 export default function ChatScreen({ route, navigation }) {
   const { userId, userName, userAvatar } = route.params;
@@ -29,6 +64,8 @@ export default function ChatScreen({ route, navigation }) {
   const flatListRef = useRef(null);
   const [isKeyboardVisible, setIsKeyboardVisible] = useState(false);
   const keyboardSlideAnim = useRef(new Animated.Value(0)).current;
+  const [selectedTone, setSelectedTone] = useState(null);
+  const [showToneSelector, setShowToneSelector] = useState(false);
 
   const handleScrollBeginDrag = () => {
     // Smoothly slide keyboard down when user starts scrolling
@@ -54,6 +91,24 @@ export default function ChatScreen({ route, navigation }) {
       }).start(() => {
         Keyboard.dismiss();
       });
+    }
+  };
+
+  const handleToneSelect = async (tone) => {
+    setSelectedTone(tone);
+    
+    try {
+      const response = await axios.post(`${API_BASE_URL}/api/tone-preference`, {
+        targetUserId: userId,
+        tone: tone?.id || null
+      }, {
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
+      });
+      console.log('Tone preference saved:', response.data);
+    } catch (error) {
+      console.error('Error saving tone preference:', error);
     }
   };
 
@@ -107,7 +162,26 @@ export default function ChatScreen({ route, navigation }) {
 
   useEffect(() => {
     fetchMessages();
+    loadTonePreference();
   }, [userId]);
+
+  const loadTonePreference = async () => {
+    try {
+      const response = await axios.get(`${API_BASE_URL}/api/tone-preference/${userId}`, {
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
+      });
+      
+      if (response.data.tone) {
+        // Find the tone object from the TONES array
+        const tone = TONES.find(t => t.id === response.data.tone);
+        setSelectedTone(tone);
+      }
+    } catch (error) {
+      console.error('Error loading tone preference:', error);
+    }
+  };
 
   const fetchMessages = async () => {
     try {
@@ -182,6 +256,14 @@ export default function ChatScreen({ route, navigation }) {
 
   return (
     <View style={styles.container}>
+      {/* Tone indicator */}
+      {selectedTone && (
+        <View style={styles.toneIndicator}>
+          <Ionicons name={selectedTone.icon} size={16} color="#007AFF" />
+          <Text style={styles.toneIndicatorText}>{selectedTone.name} mode</Text>
+        </View>
+      )}
+      
       <FlatList
         ref={flatListRef}
         data={messages}
@@ -211,6 +293,17 @@ export default function ChatScreen({ route, navigation }) {
         ]}
       >
         <View style={styles.inputContainer}>
+          <TouchableOpacity
+            style={styles.toneButton}
+            onPress={() => setShowToneSelector(true)}
+          >
+            <Ionicons 
+              name={selectedTone ? selectedTone.icon : "options"} 
+              size={20} 
+              color={selectedTone ? "#007AFF" : "#8E8E93"} 
+            />
+          </TouchableOpacity>
+          
           <View style={styles.textInputContainer}>
             <TextInput
               style={styles.textInput}
@@ -240,6 +333,13 @@ export default function ChatScreen({ route, navigation }) {
           </TouchableOpacity>
         </View>
       </Animated.View>
+      
+      <ToneSelector
+        visible={showToneSelector}
+        onClose={() => setShowToneSelector(false)}
+        onSelectTone={handleToneSelect}
+        currentTone={selectedTone}
+      />
     </View>
   );
 }
@@ -360,5 +460,29 @@ const styles = StyleSheet.create({
   },
   sendButtonDisabled: {
     backgroundColor: '#E5E5EA',
+  },
+  toneIndicator: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#F0F8FF',
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    borderBottomWidth: 1,
+    borderBottomColor: '#E5E5EA',
+  },
+  toneIndicatorText: {
+    marginLeft: 8,
+    fontSize: 14,
+    color: '#007AFF',
+    fontWeight: '500',
+  },
+  toneButton: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: '#F2F2F7',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: 8,
   },
 }); 

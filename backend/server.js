@@ -5,6 +5,7 @@ const cors = require('cors');
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const { v4: uuidv4 } = require('uuid');
+const axios = require('axios');
 
 const app = express();
 const server = http.createServer(app);
@@ -17,6 +18,7 @@ const io = socketIo(server, {
 
 const PORT = 3001;
 const JWT_SECRET = 'your-secret-key';
+const OPENAI_API_KEY = process.env.OPENAI_API_KEY || 'your-openai-api-key'; // Set this in environment variables
 
 app.use(cors());
 app.use(express.json());
@@ -70,6 +72,9 @@ const conversations = {
   ]
 };
 
+// Tone preferences storage
+const tonePreferences = {};
+
 // Fake responses for auto-reply
 const fakeResponses = {
   '1': [
@@ -93,6 +98,47 @@ const fakeResponses = {
     'That sounds good to me.',
     'I\'ll see you soon!'
   ]
+};
+
+// OpenAI integration for tone adjustment
+const adjustMessageTone = async (message, tone) => {
+  try {
+    const tonePrompts = {
+      'warmer': 'Make this message sound warmer, friendlier, and more inviting while keeping the same meaning:',
+      'profanity-free': 'Remove any profanity or inappropriate language from this message while keeping the meaning intact:',
+      'formal': 'Convert this message to a more formal, professional tone while keeping the same meaning:',
+      'simplified': 'Simplify this message to use clearer, more straightforward language while keeping the same meaning:',
+      'concise': 'Make this message more concise and direct while keeping the essential information:'
+    };
+
+    const prompt = `${tonePrompts[tone]} "${message}"`;
+
+    const response = await axios.post('https://api.openai.com/v1/chat/completions', {
+      model: 'gpt-3.5-turbo',
+      messages: [
+        {
+          role: 'system',
+          content: 'You are a helpful assistant that adjusts message tone. Respond only with the adjusted message, nothing else.'
+        },
+        {
+          role: 'user',
+          content: prompt
+        }
+      ],
+      max_tokens: 150,
+      temperature: 0.7
+    }, {
+      headers: {
+        'Authorization': `Bearer ${OPENAI_API_KEY}`,
+        'Content-Type': 'application/json'
+      }
+    });
+
+    return response.data.choices[0].message.content.trim();
+  } catch (error) {
+    console.error('OpenAI API error:', error);
+    return message; // Return original message if API fails
+  }
 };
 
 // Authentication middleware
@@ -144,6 +190,28 @@ app.get('/api/conversations/:userId', authenticateToken, (req, res) => {
   res.json(messages);
 });
 
+// Set tone preference for a specific user
+app.post('/api/tone-preference', authenticateToken, (req, res) => {
+  const { targetUserId, tone } = req.body;
+  const currentUserId = req.user.id;
+  
+  const preferenceKey = `${currentUserId}-${targetUserId}`;
+  tonePreferences[preferenceKey] = tone;
+  
+  res.json({ success: true, tone });
+});
+
+// Get tone preference for a specific user
+app.get('/api/tone-preference/:targetUserId', authenticateToken, (req, res) => {
+  const { targetUserId } = req.params;
+  const currentUserId = req.user.id;
+  
+  const preferenceKey = `${currentUserId}-${targetUserId}`;
+  const tone = tonePreferences[preferenceKey] || null;
+  
+  res.json({ tone });
+});
+
 // Socket.IO connection handling
 io.on('connection', (socket) => {
   console.log('User connected:', socket.id);
@@ -153,7 +221,7 @@ io.on('connection', (socket) => {
     console.log(`User ${userId} joined their room`);
   });
 
-  socket.on('send_message', (data) => {
+  socket.on('send_message', async (data) => {
     const { senderId, receiverId, text } = data;
     const conversationKey = [senderId, receiverId].sort().join('-');
     
@@ -164,26 +232,65 @@ io.on('connection', (socket) => {
       timestamp: Date.now()
     };
 
+    // Check if receiver has tone preference for this sender
+    const preferenceKey = `${receiverId}-${senderId}`;
+    const tonePreference = tonePreferences[preferenceKey];
+    
+    let adjustedMessage = newMessage;
+    
+    if (tonePreference) {
+      try {
+        const adjustedText = await adjustMessageTone(text, tonePreference);
+        adjustedMessage = {
+          ...newMessage,
+          text: adjustedText,
+          originalText: text, // Keep original for reference
+          toneApplied: tonePreference
+        };
+      } catch (error) {
+        console.error('Error adjusting message tone:', error);
+        // Continue with original message if tone adjustment fails
+      }
+    }
+
     // Add message to conversation
     if (!conversations[conversationKey]) {
       conversations[conversationKey] = [];
     }
-    conversations[conversationKey].push(newMessage);
+    conversations[conversationKey].push(adjustedMessage);
 
     // Send message to receiver
-    socket.to(receiverId).emit('receive_message', newMessage);
+    socket.to(receiverId).emit('receive_message', adjustedMessage);
     
     // Send confirmation to sender
     socket.emit('message_sent', newMessage);
 
     // Simulate fake response after 2-5 seconds
-    setTimeout(() => {
-      const fakeResponse = {
+    setTimeout(async () => {
+      let fakeResponse = {
         id: uuidv4(),
         senderId: receiverId,
         text: fakeResponses[receiverId][Math.floor(Math.random() * fakeResponses[receiverId].length)],
         timestamp: Date.now()
       };
+
+      // Check if sender has tone preference for receiver
+      const senderPreferenceKey = `${senderId}-${receiverId}`;
+      const senderTonePreference = tonePreferences[senderPreferenceKey];
+      
+      if (senderTonePreference) {
+        try {
+          const adjustedText = await adjustMessageTone(fakeResponse.text, senderTonePreference);
+          fakeResponse = {
+            ...fakeResponse,
+            text: adjustedText,
+            originalText: fakeResponse.text,
+            toneApplied: senderTonePreference
+          };
+        } catch (error) {
+          console.error('Error adjusting fake response tone:', error);
+        }
+      }
 
       if (!conversations[conversationKey]) {
         conversations[conversationKey] = [];
