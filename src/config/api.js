@@ -11,7 +11,8 @@ const getApiUrl = () => {
       return 'http://localhost:3001';
     } else {
       // For React Native on device/simulator, use computer's IP
-      return 'http://10.0.0.160:3001';
+      // return 'http://10.0.0.160:3001'; // andrew's ip
+      return 'http://192.168.4.106:3001'; // anuj's ip
     }
   }
   

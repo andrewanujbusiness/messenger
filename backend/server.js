@@ -1,3 +1,4 @@
+require('dotenv').config();
 const express = require('express');
 const http = require('http');
 const socketIo = require('socket.io');
@@ -102,6 +103,9 @@ const fakeResponses = {
 
 // OpenAI integration for tone adjustment
 const adjustMessageTone = async (message, tone) => {
+  console.log(`🤖 [OpenAI] Starting tone adjustment for tone: "${tone}"`);
+  console.log(`📝 [OpenAI] Original message: "${message}"`);
+  
   try {
     const tonePrompts = {
       'warmer': 'Make this message sound warmer, friendlier, and more inviting while keeping the same meaning:',
@@ -112,7 +116,11 @@ const adjustMessageTone = async (message, tone) => {
     };
 
     const prompt = `${tonePrompts[tone]} "${message}"`;
+    console.log(`🔧 [OpenAI] Using prompt: "${prompt}"`);
 
+    console.log(`🚀 [OpenAI] Making API call to OpenAI...`);
+    const startTime = Date.now();
+    
     const response = await axios.post('https://api.openai.com/v1/chat/completions', {
       model: 'gpt-3.5-turbo',
       messages: [
@@ -134,9 +142,40 @@ const adjustMessageTone = async (message, tone) => {
       }
     });
 
-    return response.data.choices[0].message.content.trim();
+    const endTime = Date.now();
+    const responseTime = endTime - startTime;
+    
+    const adjustedMessage = response.data.choices[0].message.content.trim();
+    
+    console.log(`✅ [OpenAI] API call successful! Response time: ${responseTime}ms`);
+    console.log(`📤 [OpenAI] Adjusted message: "${adjustedMessage}"`);
+    console.log(`💰 [OpenAI] Tokens used: ${response.data.usage?.total_tokens || 'unknown'}`);
+    
+    return adjustedMessage;
   } catch (error) {
-    console.error('OpenAI API error:', error);
+    const endTime = Date.now();
+    console.error(`❌ [OpenAI] API call failed after ${endTime - Date.now()}ms`);
+    console.error(`🔍 [OpenAI] Error details:`, {
+      message: error.message,
+      status: error.response?.status,
+      statusText: error.response?.statusText,
+      data: error.response?.data,
+      config: {
+        url: error.config?.url,
+        method: error.config?.method,
+        headers: error.config?.headers ? 'Present' : 'Missing'
+      }
+    });
+    
+    if (error.response?.status === 401) {
+      console.error(`🔑 [OpenAI] Authentication failed - check your API key`);
+    } else if (error.response?.status === 429) {
+      console.error(`⏰ [OpenAI] Rate limit exceeded - too many requests`);
+    } else if (error.response?.status === 500) {
+      console.error(`🔧 [OpenAI] OpenAI server error`);
+    }
+    
+    console.log(`🔄 [OpenAI] Returning original message due to API failure`);
     return message; // Return original message if API fails
   }
 };
@@ -195,8 +234,12 @@ app.post('/api/tone-preference', authenticateToken, (req, res) => {
   const { targetUserId, tone } = req.body;
   const currentUserId = req.user.id;
   
+  console.log(`🎛️ [Tone Preference] User ${currentUserId} setting tone preference for user ${targetUserId} to: ${tone}`);
+  
   const preferenceKey = `${currentUserId}-${targetUserId}`;
   tonePreferences[preferenceKey] = tone;
+  
+  console.log(`✅ [Tone Preference] Tone preference saved: ${preferenceKey} = ${tone}`);
   
   res.json({ success: true, tone });
 });
@@ -236,9 +279,13 @@ io.on('connection', (socket) => {
     const preferenceKey = `${receiverId}-${senderId}`;
     const tonePreference = tonePreferences[preferenceKey];
     
+    console.log(`🎯 [Tone] Checking tone preference for receiver ${receiverId} from sender ${senderId}`);
+    console.log(`🎯 [Tone] Tone preference found: ${tonePreference || 'none'}`);
+    
     let adjustedMessage = newMessage;
     
     if (tonePreference) {
+      console.log(`🔄 [Tone] Applying tone adjustment: ${tonePreference}`);
       try {
         const adjustedText = await adjustMessageTone(text, tonePreference);
         adjustedMessage = {
@@ -247,10 +294,13 @@ io.on('connection', (socket) => {
           originalText: text, // Keep original for reference
           toneApplied: tonePreference
         };
+        console.log(`✅ [Tone] Tone adjustment applied successfully`);
       } catch (error) {
-        console.error('Error adjusting message tone:', error);
+        console.error('❌ [Tone] Error adjusting message tone:', error);
         // Continue with original message if tone adjustment fails
       }
+    } else {
+      console.log(`⏭️ [Tone] No tone preference, using original message`);
     }
 
     // Add message to conversation
@@ -278,7 +328,11 @@ io.on('connection', (socket) => {
       const senderPreferenceKey = `${senderId}-${receiverId}`;
       const senderTonePreference = tonePreferences[senderPreferenceKey];
       
+      console.log(`🎯 [Fake Response] Checking tone preference for sender ${senderId} from receiver ${receiverId}`);
+      console.log(`🎯 [Fake Response] Tone preference found: ${senderTonePreference || 'none'}`);
+      
       if (senderTonePreference) {
+        console.log(`🔄 [Fake Response] Applying tone adjustment: ${senderTonePreference}`);
         try {
           const adjustedText = await adjustMessageTone(fakeResponse.text, senderTonePreference);
           fakeResponse = {
@@ -287,9 +341,12 @@ io.on('connection', (socket) => {
             originalText: fakeResponse.text,
             toneApplied: senderTonePreference
           };
+          console.log(`✅ [Fake Response] Tone adjustment applied successfully`);
         } catch (error) {
-          console.error('Error adjusting fake response tone:', error);
+          console.error('❌ [Fake Response] Error adjusting fake response tone:', error);
         }
+      } else {
+        console.log(`⏭️ [Fake Response] No tone preference, using original fake response`);
       }
 
       if (!conversations[conversationKey]) {
@@ -308,7 +365,16 @@ io.on('connection', (socket) => {
 });
 
 server.listen(PORT, () => {
-  console.log(`Server running on port ${PORT}`);
+  console.log(`🚀 Server running on port ${PORT}`);
+  
+  // Check OpenAI API key status
+  if (OPENAI_API_KEY && OPENAI_API_KEY !== 'your-openai-api-key') {
+    console.log(`✅ OpenAI API key is configured`);
+  } else {
+    console.log(`⚠️  OpenAI API key is not configured - tone features will not work`);
+    console.log(`   Set OPENAI_API_KEY environment variable to enable tone adjustment`);
+  }
+  
   console.log('\n=== DEMO CREDENTIALS ===');
   console.log('Username: alice, Password: password');
   console.log('Username: bob, Password: password');
