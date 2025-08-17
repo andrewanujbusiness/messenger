@@ -1,7 +1,6 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import axios from 'axios';
-import { API_BASE_URL } from '../config/api';
+import SupabaseService from '../services/supabaseService';
 
 const AuthContext = createContext();
 
@@ -15,7 +14,6 @@ export const useAuth = () => {
 
 export const AuthProvider = ({ children }) => {
   const [user, setUser] = useState(null);
-  const [token, setToken] = useState(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -24,11 +22,9 @@ export const AuthProvider = ({ children }) => {
 
   const loadStoredAuth = async () => {
     try {
-      const storedToken = await AsyncStorage.getItem('token');
       const storedUser = await AsyncStorage.getItem('user');
       
-      if (storedToken && storedUser) {
-        setToken(storedToken);
+      if (storedUser) {
         setUser(JSON.parse(storedUser));
       }
     } catch (error) {
@@ -40,45 +36,40 @@ export const AuthProvider = ({ children }) => {
 
   const login = async (username, password) => {
     try {
-      const response = await axios.post(`${API_BASE_URL}/api/login`, {
-        username,
-        password,
-      });
-
-      const { token: newToken, user: userData } = response.data;
+      const result = await SupabaseService.login(username, password);
       
-      setToken(newToken);
-      setUser(userData);
-      
-      await AsyncStorage.setItem('token', newToken);
-      await AsyncStorage.setItem('user', JSON.stringify(userData));
-      
-      return { success: true };
+      if (result.success) {
+        setUser(result.user);
+        await AsyncStorage.setItem('user', JSON.stringify(result.user));
+        return { success: true };
+      } else {
+        return { 
+          success: false, 
+          error: result.error 
+        };
+      }
     } catch (error) {
       console.error('Login error:', error);
       return { 
         success: false, 
-        error: error.response?.data?.error || 'Login failed' 
+        error: error.message || 'Login failed' 
       };
     }
   };
 
   const logout = async () => {
     try {
-      await AsyncStorage.removeItem('token');
       await AsyncStorage.removeItem('user');
     } catch (error) {
       console.error('Logout error:', error);
     } finally {
-      setToken(null);
       setUser(null);
     }
   };
 
   const value = {
     user,
-    token,
-    isAuthenticated: !!token,
+    isAuthenticated: !!user,
     loading,
     login,
     logout,

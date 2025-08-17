@@ -14,10 +14,8 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { KeyboardAwareScrollView } from 'react-native-keyboard-aware-scroll-view';
-import io from 'socket.io-client';
-import axios from 'axios';
 import { useAuth } from '../context/AuthContext';
-import { API_BASE_URL, SOCKET_URL } from '../config/api';
+import SupabaseService from '../services/supabaseService';
 import ToneSelector from '../components/ToneSelector';
 
 // Import TONES from ToneSelector component
@@ -56,18 +54,17 @@ const TONES = [
 
 export default function ChatScreen({ route, navigation }) {
   const { userId, userName, userAvatar } = route.params;
-  const { user, token } = useAuth();
+  const { user } = useAuth();
   const [messages, setMessages] = useState([]);
   const [newMessage, setNewMessage] = useState('');
   const [loading, setLoading] = useState(true);
-  const [socket, setSocket] = useState(null);
   const flatListRef = useRef(null);
   const [isKeyboardVisible, setIsKeyboardVisible] = useState(false);
   const keyboardSlideAnim = useRef(new Animated.Value(0)).current;
   const [selectedTone, setSelectedTone] = useState(null);
   const [showToneSelector, setShowToneSelector] = useState(false);
-  // Track which messages are showing original vs adjusted text
   const [messageDisplayStates, setMessageDisplayStates] = useState({});
+  const [subscription, setSubscription] = useState(null);
 
   const handleScrollBeginDrag = () => {
     // Smoothly slide keyboard down when user starts scrolling
@@ -98,87 +95,23 @@ export default function ChatScreen({ route, navigation }) {
 
   const handleToneSelect = async (tone) => {
     setSelectedTone(tone);
+    setShowToneSelector(false);
     
     try {
-      const response = await axios.post(`${API_BASE_URL}/api/tone-preference`, {
-        targetUserId: userId,
-        tone: tone?.id || null
-      }, {
-        headers: {
-          Authorization: `Bearer ${token}`,
-        },
-      });
-      console.log('Tone preference saved:', response.data);
+      await SupabaseService.setTonePreference(user.id, userId, tone.id);
+      console.log(`Tone preference set to: ${tone.name}`);
     } catch (error) {
-      console.error('Error saving tone preference:', error);
+      console.error('Error setting tone preference:', error);
+      Alert.alert('Error', 'Failed to set tone preference');
     }
   };
 
-  useEffect(() => {
-    // Connect to Socket.IO
-    const newSocket = io(SOCKET_URL);
-    setSocket(newSocket);
-
-    // Join user's room
-    newSocket.emit('join', user.id);
-
-    // Listen for incoming messages
-    newSocket.on('receive_message', (message) => {
-      setMessages(prev => [...prev, message]);
-    });
-
-    // Listen for message confirmation
-    newSocket.on('message_sent', (message) => {
-      setMessages(prev => [...prev, message]);
-    });
-
-    return () => {
-      newSocket.disconnect();
-    };
-  }, [user.id]);
-
-  useEffect(() => {
-    const keyboardDidShowListener = Keyboard.addListener('keyboardDidShow', () => {
-      setIsKeyboardVisible(true);
-      Animated.timing(keyboardSlideAnim, {
-        toValue: 1,
-        duration: 250,
-        useNativeDriver: true,
-      }).start();
-    });
-
-    const keyboardDidHideListener = Keyboard.addListener('keyboardDidHide', () => {
-      setIsKeyboardVisible(false);
-      Animated.timing(keyboardSlideAnim, {
-        toValue: 0,
-        duration: 250,
-        useNativeDriver: true,
-      }).start();
-    });
-
-    return () => {
-      keyboardDidShowListener?.remove();
-      keyboardDidHideListener?.remove();
-    };
-  }, [keyboardSlideAnim]);
-
-  useEffect(() => {
-    fetchMessages();
-    loadTonePreference();
-  }, [userId]);
-
   const loadTonePreference = async () => {
     try {
-      const response = await axios.get(`${API_BASE_URL}/api/tone-preference/${userId}`, {
-        headers: {
-          Authorization: `Bearer ${token}`,
-        },
-      });
-      
-      if (response.data.tone) {
-        // Find the tone object from the TONES array
-        const tone = TONES.find(t => t.id === response.data.tone);
-        setSelectedTone(tone);
+      const tone = await SupabaseService.getTonePreference(user.id, userId);
+      if (tone) {
+        const toneObj = TONES.find(t => t.id === tone);
+        setSelectedTone(toneObj);
       }
     } catch (error) {
       console.error('Error loading tone preference:', error);
@@ -187,12 +120,8 @@ export default function ChatScreen({ route, navigation }) {
 
   const fetchMessages = async () => {
     try {
-      const response = await axios.get(`${API_BASE_URL}/api/conversations/${userId}`, {
-        headers: {
-          Authorization: `Bearer ${token}`,
-        },
-      });
-      setMessages(response.data);
+      const messagesData = await SupabaseService.getMessages(user.id, userId);
+      setMessages(messagesData);
     } catch (error) {
       console.error('Error fetching messages:', error);
       Alert.alert('Error', 'Failed to load messages');
@@ -201,17 +130,16 @@ export default function ChatScreen({ route, navigation }) {
     }
   };
 
-  const sendMessage = () => {
+  const sendMessage = async () => {
     if (!newMessage.trim()) return;
 
-    const messageData = {
-      senderId: user.id,
-      receiverId: userId,
-      text: newMessage.trim(),
-    };
-
-    socket.emit('send_message', messageData);
-    setNewMessage('');
+    try {
+      await SupabaseService.sendMessage(user.id, userId, newMessage.trim());
+      setNewMessage('');
+    } catch (error) {
+      console.error('Error sending message:', error);
+      Alert.alert('Error', 'Failed to send message');
+    }
   };
 
   const handleMessageTap = (messageId) => {
@@ -221,9 +149,55 @@ export default function ChatScreen({ route, navigation }) {
     }));
   };
 
+  // Set up real-time subscription
+  useEffect(() => {
+    if (user && userId) {
+      const channel = SupabaseService.subscribeToMessages(user.id, userId, (payload) => {
+        if (payload.event === 'INSERT') {
+          setMessages(prev => [...prev, payload.new]);
+        }
+      });
+
+      setSubscription(channel);
+
+      return () => {
+        SupabaseService.unsubscribe(channel);
+      };
+    }
+  }, [user, userId]);
+
+  useEffect(() => {
+    if (user) {
+      fetchMessages();
+      loadTonePreference();
+    }
+  }, [user]);
+
+  useEffect(() => {
+    const keyboardDidShowListener = Keyboard.addListener('keyboardDidShow', () => {
+      setIsKeyboardVisible(true);
+    });
+    const keyboardDidHideListener = Keyboard.addListener('keyboardDidHide', () => {
+      setIsKeyboardVisible(false);
+    });
+
+    return () => {
+      keyboardDidShowListener?.remove();
+      keyboardDidHideListener?.remove();
+    };
+  }, []);
+
+  useEffect(() => {
+    if (messages.length > 0 && flatListRef.current) {
+      setTimeout(() => {
+        flatListRef.current?.scrollToEnd({ animated: true });
+      }, 100);
+    }
+  }, [messages]);
+
   const renderMessage = ({ item }) => {
-    const isOwnMessage = item.senderId === user.id;
-    const hasToneAdjustment = item.originalText && item.toneApplied;
+    const isOwnMessage = item.sender_id === user.id;
+    const hasToneAdjustment = item.original_text && item.tone_applied;
     const isShowingOriginal = messageDisplayStates[item.id];
     
     // Determine which text to display
@@ -232,7 +206,7 @@ export default function ChatScreen({ route, navigation }) {
     
     if (hasToneAdjustment && !isOwnMessage) {
       // For received messages with tone adjustment, show adjusted by default
-      displayText = isShowingOriginal ? item.originalText : item.text;
+      displayText = isShowingOriginal ? item.original_text : item.text;
       isToneAdjusted = true;
     }
     
@@ -256,13 +230,13 @@ export default function ChatScreen({ route, navigation }) {
             <View style={styles.messageToneIndicator}>
               {!isShowingOriginal && (
                 <Ionicons 
-                  name={TONES.find(t => t.id === item.toneApplied)?.icon || 'options'} 
+                  name={TONES.find(t => t.id === item.tone_applied)?.icon || 'options'} 
                   size={12} 
                   color="#007AFF" 
                 />
               )}
               <Text style={styles.messageToneIndicatorText}>
-                {isShowingOriginal ? 'Original' : TONES.find(t => t.id === item.toneApplied)?.name}
+                {isShowingOriginal ? 'Original' : TONES.find(t => t.id === item.tone_applied)?.name}
               </Text>
             </View>
           )}
@@ -274,16 +248,11 @@ export default function ChatScreen({ route, navigation }) {
             {displayText}
           </Text>
           
-
-          
           <Text style={[
             styles.messageTime,
             isOwnMessage ? styles.ownMessageTime : styles.otherMessageTime
           ]}>
-            {new Date(item.timestamp).toLocaleTimeString([], { 
-              hour: '2-digit', 
-              minute: '2-digit' 
-            })}
+            {new Date(item.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
           </Text>
         </TouchableOpacity>
       </View>
