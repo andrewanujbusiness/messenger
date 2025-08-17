@@ -31,75 +31,31 @@ const users = [
     username: 'alice',
     password: '$2a$10$92IXUNpkjO0rOQ5byMi.Ye4oKoEa3Ro9llC/.og/at2.uheWG/igi', // password
     name: 'Alice Johnson',
-    avatar: 'https://i.pravatar.cc/150?img=1',
-    status: 'Hey there! I am using iMessage Clone'
+    avatar: 'https://images.unsplash.com/photo-1438761681033-6461ffad8d80?w=150&h=150'
   },
   {
     id: '2',
     username: 'bob',
     password: '$2a$10$92IXUNpkjO0rOQ5byMi.Ye4oKoEa3Ro9llC/.og/at2.uheWG/igi', // password
     name: 'Bob Smith',
-    avatar: 'https://i.pravatar.cc/150?img=2',
-    status: 'Available'
+    avatar: 'https://images.unsplash.com/photo-1500648767791-00dcc994a43e?w=150&h=150'
   },
   {
     id: '3',
     username: 'charlie',
     password: '$2a$10$92IXUNpkjO0rOQ5byMi.Ye4oKoEa3Ro9llC/.og/at2.uheWG/igi', // password
     name: 'Charlie Brown',
-    avatar: 'https://i.pravatar.cc/150?img=3',
-    status: 'In a meeting'
+    avatar: 'https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?w=150&h=150'
   }
 ];
 
-// Demo conversations with fake messages
-const conversations = {
-  '1-2': [
-    { id: '1', senderId: '1', text: 'Hey Bob! How are you doing?', timestamp: Date.now() - 3600000 },
-    { id: '2', senderId: '2', text: 'Hi Alice! I\'m doing great, thanks for asking. How about you?', timestamp: Date.now() - 3500000 },
-    { id: '3', senderId: '1', text: 'Pretty good! Are you free for coffee this weekend?', timestamp: Date.now() - 3400000 },
-    { id: '4', senderId: '2', text: 'Absolutely! Saturday at 2 PM works for me.', timestamp: Date.now() - 3300000 }
-  ],
-  '1-3': [
-    { id: '5', senderId: '1', text: 'Charlie, did you finish the project?', timestamp: Date.now() - 7200000 },
-    { id: '6', senderId: '3', text: 'Almost done! Should be ready by tomorrow.', timestamp: Date.now() - 7100000 },
-    { id: '7', senderId: '1', text: 'Perfect! Looking forward to seeing it.', timestamp: Date.now() - 7000000 }
-  ],
-  '2-3': [
-    { id: '8', senderId: '2', text: 'Charlie, want to grab lunch?', timestamp: Date.now() - 1800000 },
-    { id: '9', senderId: '3', text: 'Sure! What do you have in mind?', timestamp: Date.now() - 1700000 },
-    { id: '10', senderId: '2', text: 'How about that new pizza place downtown?', timestamp: Date.now() - 1600000 },
-    { id: '11', senderId: '3', text: 'Sounds great! See you there at noon.', timestamp: Date.now() - 1500000 }
-  ]
-};
+// Conversations storage - starts empty
+const conversations = {};
 
 // Tone preferences storage
 const tonePreferences = {};
 
-// Fake responses for auto-reply
-const fakeResponses = {
-  '1': [
-    'That sounds great!',
-    'I\'ll get back to you soon.',
-    'Thanks for letting me know!',
-    'Can\'t wait to catch up!',
-    'Sounds like a plan!'
-  ],
-  '2': [
-    'Absolutely!',
-    'I\'m on it!',
-    'That works for me.',
-    'Great idea!',
-    'Looking forward to it!'
-  ],
-  '3': [
-    'Perfect timing!',
-    'I\'ll check on that.',
-    'Thanks for the update!',
-    'That sounds good to me.',
-    'I\'ll see you soon!'
-  ]
-};
+
 
 // OpenAI integration for tone adjustment
 const adjustMessageTone = async (message, tone) => {
@@ -314,49 +270,6 @@ io.on('connection', (socket) => {
     
     // Send confirmation to sender
     socket.emit('message_sent', newMessage);
-
-    // Simulate fake response after 2-5 seconds
-    setTimeout(async () => {
-      let fakeResponse = {
-        id: uuidv4(),
-        senderId: receiverId,
-        text: fakeResponses[receiverId][Math.floor(Math.random() * fakeResponses[receiverId].length)],
-        timestamp: Date.now()
-      };
-
-      // Check if sender has tone preference for receiver
-      const senderPreferenceKey = `${senderId}-${receiverId}`;
-      const senderTonePreference = tonePreferences[senderPreferenceKey];
-      
-      console.log(`🎯 [Fake Response] Checking tone preference for sender ${senderId} from receiver ${receiverId}`);
-      console.log(`🎯 [Fake Response] Tone preference found: ${senderTonePreference || 'none'}`);
-      
-      if (senderTonePreference) {
-        console.log(`🔄 [Fake Response] Applying tone adjustment: ${senderTonePreference}`);
-        try {
-          const adjustedText = await adjustMessageTone(fakeResponse.text, senderTonePreference);
-          fakeResponse = {
-            ...fakeResponse,
-            text: adjustedText,
-            originalText: fakeResponse.text,
-            toneApplied: senderTonePreference
-          };
-          console.log(`✅ [Fake Response] Tone adjustment applied successfully`);
-        } catch (error) {
-          console.error('❌ [Fake Response] Error adjusting fake response tone:', error);
-        }
-      } else {
-        console.log(`⏭️ [Fake Response] No tone preference, using original fake response`);
-      }
-
-      if (!conversations[conversationKey]) {
-        conversations[conversationKey] = [];
-      }
-      conversations[conversationKey].push(fakeResponse);
-
-      // Send fake response to sender
-      socket.emit('receive_message', fakeResponse);
-    }, 2000 + Math.random() * 3000);
   });
 
   socket.on('disconnect', () => {

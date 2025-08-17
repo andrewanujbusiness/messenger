@@ -60,7 +60,6 @@ export default function ChatListScreen({ navigation }) {
       
       <View style={styles.userInfo}>
         <Text style={styles.userName}>{item.name}</Text>
-        <Text style={styles.userStatus}>{item.status}</Text>
       </View>
       
       <View style={styles.arrowContainer}>
@@ -157,10 +156,7 @@ const styles = StyleSheet.create({
     color: '#000',
     marginBottom: 2,
   },
-  userStatus: {
-    fontSize: 14,
-    color: '#8E8E93',
-  },
+
   arrowContainer: {
     marginLeft: 8,
   },
