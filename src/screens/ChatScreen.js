@@ -66,6 +66,8 @@ export default function ChatScreen({ route, navigation }) {
   const keyboardSlideAnim = useRef(new Animated.Value(0)).current;
   const [selectedTone, setSelectedTone] = useState(null);
   const [showToneSelector, setShowToneSelector] = useState(false);
+  // Track which messages are showing original vs adjusted text
+  const [messageDisplayStates, setMessageDisplayStates] = useState({});
 
   const handleScrollBeginDrag = () => {
     // Smoothly slide keyboard down when user starts scrolling
@@ -212,24 +214,68 @@ export default function ChatScreen({ route, navigation }) {
     setNewMessage('');
   };
 
+  const handleMessageTap = (messageId) => {
+    setMessageDisplayStates(prev => ({
+      ...prev,
+      [messageId]: !prev[messageId]
+    }));
+  };
+
   const renderMessage = ({ item }) => {
     const isOwnMessage = item.senderId === user.id;
+    const hasToneAdjustment = item.originalText && item.toneApplied;
+    const isShowingOriginal = messageDisplayStates[item.id];
+    
+    // Determine which text to display
+    let displayText = item.text;
+    let isToneAdjusted = false;
+    
+    if (hasToneAdjustment && !isOwnMessage) {
+      // For received messages with tone adjustment, show adjusted by default
+      displayText = isShowingOriginal ? item.originalText : item.text;
+      isToneAdjusted = true;
+    }
     
     return (
       <View style={[
         styles.messageContainer,
         isOwnMessage ? styles.ownMessageContainer : styles.otherMessageContainer
       ]}>
-        <View style={[
-          styles.messageBubble,
-          isOwnMessage ? styles.ownMessageBubble : styles.otherMessageBubble
-        ]}>
+        <TouchableOpacity
+          onPress={() => hasToneAdjustment && !isOwnMessage ? handleMessageTap(item.id) : null}
+          activeOpacity={hasToneAdjustment && !isOwnMessage ? 0.7 : 1}
+          disabled={!hasToneAdjustment || isOwnMessage}
+          style={[
+            styles.messageBubble,
+            isOwnMessage ? styles.ownMessageBubble : styles.otherMessageBubble,
+            hasToneAdjustment && !isOwnMessage && styles.tappableMessageBubble
+          ]}
+        >
+          {/* Tone adjustment indicator */}
+          {hasToneAdjustment && !isOwnMessage && (
+            <View style={styles.messageToneIndicator}>
+              {!isShowingOriginal && (
+                <Ionicons 
+                  name={TONES.find(t => t.id === item.toneApplied)?.icon || 'options'} 
+                  size={12} 
+                  color="#007AFF" 
+                />
+              )}
+              <Text style={styles.messageToneIndicatorText}>
+                {isShowingOriginal ? 'Original' : TONES.find(t => t.id === item.toneApplied)?.name}
+              </Text>
+            </View>
+          )}
+          
           <Text style={[
             styles.messageText,
             isOwnMessage ? styles.ownMessageText : styles.otherMessageText
           ]}>
-            {item.text}
+            {displayText}
           </Text>
+          
+
+          
           <Text style={[
             styles.messageTime,
             isOwnMessage ? styles.ownMessageTime : styles.otherMessageTime
@@ -239,7 +285,7 @@ export default function ChatScreen({ route, navigation }) {
               minute: '2-digit' 
             })}
           </Text>
-        </View>
+        </TouchableOpacity>
       </View>
     );
   };
@@ -397,6 +443,8 @@ const styles = StyleSheet.create({
   messageText: {
     fontSize: 16,
     lineHeight: 20,
+    marginBottom: 0,
+    paddingBottom: 0,
   },
   ownMessageText: {
     color: 'white',
@@ -484,5 +532,36 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
     marginRight: 8,
+  },
+
+
+  // Tone indicator within individual messages
+  messageToneIndicator: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 4,
+    paddingHorizontal: 4,
+    paddingVertical: 2,
+    backgroundColor: 'rgba(0, 122, 255, 0.1)',
+    borderRadius: 8,
+    alignSelf: 'flex-start',
+  },
+  messageToneIndicatorText: {
+    marginLeft: 4,
+    fontSize: 10,
+    color: '#007AFF',
+    fontWeight: '500',
+  },
+  tappableMessageBubble: {
+    borderWidth: 1,
+    borderColor: '#007AFF',
+    shadowColor: '#007AFF',
+    shadowOffset: {
+      width: 0,
+      height: 1,
+    },
+    shadowOpacity: 0.2,
+    shadowRadius: 2,
+    elevation: 2,
   },
 }); 
